@@ -1,0 +1,12 @@
+{
+  "name": "pixelle-companion",
+  "version": "1.0.0",
+  "description": "AI-Powered Pixel Art Desktop Companion",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^41.0.0"
+  }
+}

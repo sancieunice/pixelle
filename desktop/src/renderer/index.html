@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Pixelle Companion</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="companion-container">
+    <!-- Dialogue / Reminder Bubble -->
+    <div id="speech-bubble" class="speech-bubble hidden">
+      <p id="speech-text">...</p>
+      <div id="speech-tail" class="bubble-tail"></div>
+    </div>
+
+    <!-- Character Sprite -->
+    <div id="sprite-wrapper" class="sprite-wrapper">
+      <img id="companion-sprite" src="" alt="Companion" class="pixel-crisp" draggable="false" />
+      <!-- Sleep Zzz Particles -->
+      <div id="sleep-container" class="sleep-container hidden">
+        <span class="z-particle z1">Z</span>
+        <span class="z-particle z2">z</span>
+        <span class="z-particle z3">z</span>
+      </div>
+    </div>
+
+    <!-- Status indicator badge -->
+    <div id="companion-name" class="companion-label">Pixelle</div>
+  </div>
+
+  <script src="companion.js"></script>
+</body>
+</html>
