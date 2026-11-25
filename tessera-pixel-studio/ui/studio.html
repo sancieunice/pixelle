@@ -1,0 +1,336 @@
+<div class="ts-app" id="ts-app" data-bg="tint" data-view="pixels">
+
+  <!-- ================================ sidebar ================================ -->
+  <aside class="ts-side">
+    <div class="ts-top">
+      <button class="ts-brand" data-action="tab" data-tab="explore" aria-label="Tessera home">
+        <canvas class="px" id="ts-logo" width="16" height="16"></canvas>
+        <span>Tessera Studio</span>
+      </button>
+      <button class="ts-howbtn" data-action="open-writeup">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H2z"/><path d="M22 4h-7a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h8z"/></svg>
+        How it works
+      </button>
+    </div>
+
+    <div class="ts-profile">
+      <div class="ts-avatar"><div class="ts-avatar-in" id="ts-avatar-in"><canvas class="px" id="ts-avatar" width="16" height="16"></canvas></div></div>
+      <h1 class="ts-title">Tessera: Pixel Painter</h1>
+      <div class="ts-handle">by <b>Jagrat Patel</b> &middot; <a href="https://huggingface.co/thejagstudio" target="_blank" rel="noopener">@TheJagStudio</a></div>
+    </div>
+
+    <button class="ts-desc" data-action="open-writeup" title="Read the technical write-up">
+      <span>A 48M-parameter diffusion language model that paints 16&times;16 pixel art from text. Every pixel is a token from a 512-color palette, and all 256 are unmasked in parallel, in about 16 steps.</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>
+    </button>
+
+    <div class="ts-divider"></div>
+
+    <label class="ts-label" for="ts-prompt">Prompt</label>
+    <div class="ts-prompt-wrap">
+      <textarea class="ts-prompt" id="ts-prompt" placeholder="Type Prompt here" maxlength="240" spellcheck="false"></textarea>
+      <div class="ts-prompt-actions">
+        <span class="ts-kbd">Enter &crarr;</span>
+        <button class="ts-iconbtn" data-action="surprise" title="Surprise me">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="16" cy="16" r="1.2" fill="currentColor"/><circle cx="16" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="16" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="ts-chips" id="ts-chips"></div>
+
+    <div class="ts-row">
+      <span class="ts-mini-label">Images</span>
+      <div class="ts-seg" id="ts-count">
+        <button data-n="1">1</button>
+        <button data-n="4" class="on">4</button>
+        <button data-n="8">8</button>
+        <button data-n="16">16</button>
+      </div>
+    </div>
+    <div class="ts-row ts-row-tight">
+      <span class="ts-mini-label">Run on</span>
+      <div class="ts-seg" id="ts-device" title="GPU is fast (ZeroGPU). CPU needs no GPU quota but is slower and limited to 4 images.">
+        <button data-device="gpu" class="on">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          GPU
+        </button>
+        <button data-device="cpu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+          CPU
+        </button>
+      </div>
+    </div>
+
+    <details class="ts-adv" id="ts-adv">
+      <summary>Advanced settings
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </summary>
+      <div class="ts-adv-body">
+        <div class="ts-field">
+          <div class="ts-field-head"><span>Steps</span><span class="ts-val" data-out="steps">16</span></div>
+          <input class="ts-range" type="range" min="4" max="32" step="1" value="16" data-param="steps">
+          <div class="ts-field-hint">Parallel unmasking passes. 12&ndash;20 is the sweet spot.</div>
+        </div>
+        <div class="ts-field">
+          <div class="ts-field-head"><span>Guidance (CFG)</span><span class="ts-val" data-out="cfg">3.0</span></div>
+          <input class="ts-range" type="range" min="1" max="8" step="0.25" value="3" data-param="cfg">
+          <div class="ts-field-hint">How strongly to follow the prompt. Higher is bolder, lower is more varied.</div>
+        </div>
+        <div class="ts-field">
+          <div class="ts-field-head"><span>Color temperature</span><span class="ts-val" data-out="temperature">1.00</span></div>
+          <input class="ts-range" type="range" min="0.3" max="1.5" step="0.05" value="1" data-param="temperature">
+        </div>
+        <div class="ts-field">
+          <div class="ts-field-head"><span>Order randomness</span><span class="ts-val" data-out="choice_temperature">2.0</span></div>
+          <input class="ts-range" type="range" min="0" max="5" step="0.25" value="2" data-param="choice_temperature">
+          <div class="ts-field-hint">Gumbel noise on which pixels get committed first.</div>
+        </div>
+        <div class="ts-field">
+          <div class="ts-field-head"><span>Polish passes</span><span class="ts-val" data-out="polish">0</span></div>
+          <input class="ts-range" type="range" min="0" max="4" step="1" value="0" data-param="polish">
+          <div class="ts-field-hint">Re-predict the least confident 8% of pixels after decoding.</div>
+        </div>
+        <div class="ts-field">
+          <div class="ts-field-head"><span>Guidance schedule</span></div>
+          <select class="ts-select" data-param="cfg_schedule">
+            <option value="constant" selected>Constant</option>
+            <option value="linear">Linear ramp</option>
+            <option value="cosine">Cosine ramp</option>
+          </select>
+        </div>
+        <label class="ts-toggle">Spatial NMS (anti-speckle)<input type="checkbox" data-param="nms" checked><span class="ts-switch"></span></label>
+        <div class="ts-field">
+          <div class="ts-field-head"><span>Seed</span><span class="ts-val">blank = random</span></div>
+          <div class="ts-inline">
+            <input class="ts-input" id="ts-seed" type="number" min="0" placeholder="random">
+            <button class="ts-iconbtn ts-lock" id="ts-seed-lock" title="Lock seed (reuse last seed)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="ts-field">
+          <div class="ts-field-head"><span>Playback</span></div>
+          <div class="ts-seg" id="ts-speed">
+            <button data-speed="0">Instant</button>
+            <button data-speed="80" class="on">Smooth</button>
+            <button data-speed="260">Slow-mo</button>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <button class="ts-create" id="ts-create">
+      <span class="ts-create-fill" id="ts-create-fill"></span>
+      <span class="ts-create-label" id="ts-create-label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4.1 12 6"/><path d="m5.1 8-2.9-.8"/><path d="m6 12-1.9 2"/><path d="M7.2 2.2 8 5.1"/><path d="M9.04 12.18a.5.5 0 0 1 .64-.64l10.5 4.2a.5.5 0 0 1-.04.95l-4.01 1.15a1 1 0 0 0-.68.68l-1.15 4.01a.5.5 0 0 1-.95.04z"/></svg>
+        Create
+      </span>
+    </button>
+
+    <div class="ts-foot">
+      <div class="ts-foot-main"><b>TESSERA</b><i></i><button data-action="open-writeup">Read the Technical Write-up</button></div>
+      <div class="ts-foot-sub">Trained on <a href="https://huggingface.co/datasets/Angais/pixel-art-atlas-1.4m" target="_blank" rel="noopener">Pixel Art Atlas 1.4M</a> by Angais &middot; thank you!</div>
+      <div class="ts-foot-sub">&copy; 2026 Jagrat Patel (TheJagStudio) &middot; <a href="https://huggingface.co/thejagstudio/tessera-small" target="_blank" rel="noopener">model</a> under <a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noopener">CC BY-NC 4.0</a>, non-commercial use only</div>
+    </div>
+  </aside>
+
+  <!-- ================================ main ================================ -->
+  <main class="ts-main">
+    <div class="ts-toolbar">
+      <div class="ts-tabs" id="ts-tabs">
+        <button class="ts-tab" data-tab="studio">Studio <span class="ts-badge zero" id="ts-studio-count">0</span></button>
+        <button class="ts-tab on" data-tab="explore">Explore</button>
+        <button class="ts-tab" data-tab="palette">Palette</button>
+      </div>
+      <div class="ts-tools">
+        <div class="ts-seg" id="ts-view" title="What to show while painting">
+          <button data-view="pixels" class="on">Pixels</button>
+          <button data-view="ghost">Ghost</button>
+          <button data-view="conf">Confidence</button>
+        </div>
+        <div class="ts-seg" id="ts-bg" title="Tile background">
+          <button data-bg="tint" class="on">Tint</button>
+          <button data-bg="checker">Checker</button>
+          <button data-bg="white">White</button>
+          <button data-bg="dark">Dark</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- studio -->
+    <section class="ts-panel" data-panel="studio">
+      <div class="ts-live" id="ts-live" hidden>
+        <span class="ts-live-dot"></span>
+        <div class="ts-live-main">
+          <div class="ts-live-prompt" id="ts-live-prompt">&nbsp;</div>
+          <div class="ts-live-meta" id="ts-live-meta">&nbsp;</div>
+          <div class="ts-live-bar"><i id="ts-live-bar"></i></div>
+        </div>
+        <div class="ts-live-step" id="ts-live-step">0/16</div>
+      </div>
+      <div class="ts-empty" id="ts-empty">
+        <canvas class="px" id="ts-empty-sprite" width="16" height="16"></canvas>
+        <h3>Your canvas is empty</h3>
+        <p>Type a prompt on the left and press <b>Create</b>. You will watch every pixel get unmasked live, step by step. Creations are kept in this browser.</p>
+        <button class="ts-btn" data-action="open-editor-blank">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          Or sketch something in the Pixel Editor
+        </button>
+      </div>
+      <div class="ts-grid" id="ts-studio-grid"></div>
+    </section>
+
+    <!-- explore -->
+    <section class="ts-panel on" data-panel="explore">
+      <div class="ts-section-head">
+        <div>
+          <h2>Explore</h2>
+          <p>Sprites painted by Tessera, best of 4 by CLIP score. Hover to replay the unmasking, click for details.</p>
+        </div>
+        <button class="ts-btn" data-action="open-editor-blank">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          Pixel Editor
+        </button>
+      </div>
+      <div class="ts-grid" id="ts-explore-grid"></div>
+    </section>
+
+    <!-- palette -->
+    <section class="ts-panel" data-panel="palette">
+      <div class="ts-section-head">
+        <div>
+          <h2>The 512-color vocabulary</h2>
+          <p>Every pixel Tessera paints is one of these tokens. Hover to inspect, click to paint with it in the editor.</p>
+        </div>
+      </div>
+      <div class="ts-palette-wrap">
+        <canvas class="px ts-palette-canvas" id="ts-palette-canvas" width="32" height="16"></canvas>
+        <div class="ts-palette-info">
+          <h3>Perceptual palette</h3>
+          <p>Built with frequency-weighted k-means in OKLab over every color in the 1.4M-sprite dataset, with each centroid snapped to a real color. Token 0 is transparent.</p>
+          <div class="ts-swatch-big" id="ts-pal-swatch"></div>
+          <dl class="ts-kv">
+            <dt>Token</dt><dd id="ts-pal-idx">&ndash;</dd>
+            <dt>Hex</dt><dd id="ts-pal-hex">&ndash;</dd>
+            <dt>RGB</dt><dd id="ts-pal-rgb">&ndash;</dd>
+          </dl>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ================================ detail modal ================================ -->
+  <div class="ts-modal" id="ts-detail" role="dialog" aria-modal="true">
+    <div class="ts-dialog">
+      <button class="ts-close" data-action="close-modal" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="ts-detail">
+        <div class="ts-detail-left">
+          <div class="ts-stage" id="ts-d-stage">
+            <button class="ts-stage-nav prev" data-action="detail-prev" aria-label="Previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+            <canvas class="px" id="ts-d-canvas" width="16" height="16"></canvas>
+            <button class="ts-stage-nav next" data-action="detail-next" aria-label="Next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+          </div>
+          <div class="ts-scrub">
+            <button class="ts-play" data-action="detail-play" aria-label="Replay"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></button>
+            <input class="ts-range" type="range" min="0" max="16" value="16" id="ts-d-scrub">
+            <span class="ts-scrub-label" id="ts-d-step">step 16/16</span>
+          </div>
+        </div>
+        <div class="ts-detail-right">
+          <div>
+            <div class="ts-eyebrow" id="ts-d-source">Explore</div>
+            <h2 class="ts-detail-prompt" id="ts-d-prompt">&nbsp;</h2>
+          </div>
+          <div class="ts-meta" id="ts-d-meta"></div>
+          <div>
+            <div class="ts-sub" id="ts-d-colors-label">Colors</div>
+            <div class="ts-colors-row" id="ts-d-colors"></div>
+          </div>
+          <div class="ts-actions">
+            <button class="ts-btn ts-primary wide" data-action="download-png">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+              Download PNG (512&times;512)
+            </button>
+            <button class="ts-btn" data-action="download-small">16&times;16 original</button>
+            <button class="ts-btn" data-action="use-prompt">Use prompt</button>
+            <button class="ts-btn" data-action="variations">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/></svg>
+              4 variations
+            </button>
+            <button class="ts-btn" data-action="remix">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
+              Remix 35%
+            </button>
+            <button class="ts-btn wide" data-action="edit">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+              Open in Pixel Editor (paint &amp; inpaint)
+            </button>
+          </div>
+          <p class="ts-note" id="ts-d-note">Drag the slider to scrub through the denoising trajectory. Each step commits the pixels the model is most confident about.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================ editor modal ================================ -->
+  <div class="ts-modal" id="ts-editor" role="dialog" aria-modal="true">
+    <div class="ts-dialog">
+      <button class="ts-close" data-action="close-modal" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="ts-editor">
+        <div class="ts-editor-left">
+          <div class="ts-ed-toolbar" id="ts-ed-tools">
+            <button class="ts-tool on" data-tool="pencil" title="Pencil (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Pencil</button>
+            <button class="ts-tool" data-tool="eraser" title="Eraser (E)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>Erase</button>
+            <button class="ts-tool" data-tool="fill" title="Fill (G)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/><path d="m5 2 5 5"/><path d="M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z"/></svg>Fill</button>
+            <button class="ts-tool" data-tool="picker" title="Color picker (I)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>Pick</button>
+            <span class="ts-ed-sep"></span>
+            <button class="ts-tool magic" data-tool="magic" title="Mark pixels for Tessera to repaint (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg>Magic brush</button>
+            <button class="ts-tool" data-tool="unmark" title="Unmark (U)">Unmark</button>
+            <span class="ts-ed-sep"></span>
+            <button class="ts-tool" data-action="ed-undo" title="Undo (Ctrl/Cmd+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+            <button class="ts-tool" data-action="ed-clear" title="New blank canvas">Clear</button>
+          </div>
+          <div class="ts-ed-stage" id="ts-ed-stage">
+            <canvas class="px" id="ts-ed-canvas" width="16" height="16"></canvas>
+            <canvas id="ts-ed-overlay" width="320" height="320"></canvas>
+            <div class="ts-ed-grid"></div>
+          </div>
+          <div class="ts-ed-hint" id="ts-ed-hint">&nbsp;</div>
+        </div>
+        <div class="ts-editor-right">
+          <div>
+            <div class="ts-eyebrow">Pixel Editor</div>
+            <h2 class="ts-detail-prompt" style="font-size:21px">Paint, then let Tessera fill in the rest</h2>
+          </div>
+          <p class="ts-note">Pixels you paint stay <b>locked</b>. The <b>Magic brush</b> marks pixels for Tessera to repaint (violet hatching). On a blank canvas, sketch a few strokes and press Repaint: the model completes the sprite around your sketch.</p>
+          <div class="ts-ed-current"><i id="ts-ed-color"></i><div><b>Current color</b><span id="ts-ed-color-hex">#000000</span></div></div>
+          <canvas class="px ts-ed-palette" id="ts-ed-palette" width="32" height="16"></canvas>
+          <div>
+            <div class="ts-sub">Prompt for repainting</div>
+            <input class="ts-textline" id="ts-ed-prompt" placeholder="e.g. green slime monster" maxlength="240">
+          </div>
+          <button class="ts-btn ts-primary" data-action="ed-generate" id="ts-ed-generate">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
+            <span id="ts-ed-generate-label">Repaint marked pixels</span>
+          </button>
+          <div>
+            <div class="ts-sub">Candidates (click to apply)</div>
+            <div class="ts-ed-results" id="ts-ed-results"></div>
+          </div>
+          <div class="ts-actions">
+            <button class="ts-btn" data-action="ed-save">Save to Studio</button>
+            <button class="ts-btn" data-action="ed-download">Download PNG</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!--WRITEUP-->
+
+  <div class="ts-toasts" id="ts-toasts"></div>
+</div>

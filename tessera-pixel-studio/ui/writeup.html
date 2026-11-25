@@ -1,0 +1,300 @@
+<div class="ts-sheet wu" id="ts-writeup" role="dialog" aria-modal="true" aria-label="Technical write-up">
+  <div class="wu-bar">
+    <div class="ts-brand"><canvas class="px" id="wu-logo" width="16" height="16"></canvas><span>Tessera &middot; Technical Write-up</span></div>
+    <button class="ts-btn" data-action="close-writeup">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      Back to the studio
+    </button>
+    <div class="wu-progress" id="wu-progress"></div>
+  </div>
+
+  <div class="wu-layout">
+    <nav class="wu-toc" id="wu-toc">
+      <a href="#wu-intro">Overview</a>
+      <a href="#wu-tokens">Pixels as tokens</a>
+      <a href="#wu-diffusion">Masked diffusion</a>
+      <a href="#wu-arch">Architecture</a>
+      <a href="#wu-training">Training recipe</a>
+      <a href="#wu-sampling">Parallel decoding</a>
+      <a href="#wu-results">Results</a>
+      <a href="#wu-limits">Limitations</a>
+      <a href="#wu-credits">Credits &amp; thanks</a>
+      <a href="#wu-refs">References</a>
+    </nav>
+
+    <article>
+      <!-- ============================================================ -->
+      <section id="wu-intro">
+        <div class="eyebrow">TECHNICAL WRITE-UP &middot; BY JAGRAT PATEL (THEJAGSTUDIO)</div>
+        <h1>Tessera: painting pixel art with a diffusion language model</h1>
+        <p class="lede">Tessera treats a 16&times;16 sprite as a 256-word sentence. Every pixel is a token from a 512-color vocabulary. A bidirectional transformer starts from a canvas where every pixel is <code>[MASK]</code> and fills in the whole picture in parallel over about 16 steps, conditioned on your prompt. It has no VAE, no latent space and no autoregression: the model writes palette tokens directly.</p>
+        <div class="wu-stats">
+          <div class="wu-stat"><b>47.6M</b><span>trainable parameters</span></div>
+          <div class="wu-stat"><b>16 steps</b><span>to paint all 256 pixels in parallel</span></div>
+          <div class="wu-stat"><b>512</b><span>color tokens (OKLab palette)</span></div>
+          <div class="wu-stat"><b>1.4M</b><span>training sprites, 30 epochs</span></div>
+          <div class="wu-stat"><b>5.5 h</b><span>on one RTX PRO 6000 (Colab G4)</span></div>
+          <div class="wu-stat"><b>0.859</b><span>validation NLL (nats / pixel)</span></div>
+        </div>
+        <p>This page explains every piece: how pixels become tokens, how the masked-diffusion objective works, what the network looks like, how it was trained, and how the sampler turns a blank canvas into a sprite. The figures use the real training logs of the model running in this Space.</p>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="wu-tokens">
+        <h2>1. Pixels as tokens</h2>
+        <p>A diffusion <em>language</em> model needs a vocabulary. Pixel art is unusually well suited to this: sprites use a small set of flat colors, hard edges and no anti-aliasing, so a discrete palette loses almost nothing. The training set, <a href="https://huggingface.co/datasets/Angais/pixel-art-atlas-1.4m" target="_blank" rel="noopener">Pixel Art Atlas 1.4M</a>, contains 4,096 distinct colors and binary alpha. About 40% of all pixels are transparent.</p>
+        <h3>Building a perceptual palette</h3>
+        <ul>
+          <li><b>Count every color</b> across the whole dataset (a chunked GPU histogram over 24-bit RGB).</li>
+          <li><b>Weighted k-means in OKLab</b>, a perceptually uniform color space, with weights <code>count<sup>0.5</sup></code>. Square-rooting the counts keeps rare-but-important hues (a gem highlight, a flame tip) from being swallowed by dominant ones.</li>
+          <li><b>Snap every centroid to the nearest real dataset color</b>, so exact pure colors (black outlines, white glints) survive untouched.</li>
+          <li><b>Token 0 is transparent</b>, leaving 511 opaque colors. Every pixel in the dataset is then mapped to its nearest palette entry through a precomputed 16.7M-entry lookup table.</li>
+        </ul>
+        <p>The mean quantization error is <b>&Delta;E<sub>OK</sub> = 0.010</b>, below the roughly 0.02 just-noticeable difference and about 4&times; better than a uniform 8&times;8&times;8 RGB cube (0.039).</p>
+        <figure class="wu-fig">
+          <canvas class="px wu-pal" id="wu-palette" width="32" height="16"></canvas>
+          <figcaption>The 512 palette tokens, sorted by hue bucket and lightness. The first cell (top-left) is the transparent token.</figcaption>
+        </figure>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="wu-diffusion">
+        <h2>2. Masked (absorbing-state) discrete diffusion</h2>
+        <p>Instead of adding Gaussian noise to continuous values, a masked diffusion model corrupts a sequence by replacing tokens with a special <code>[MASK]</code> token. The model learns to predict the original token at every masked position, all at once. This is the family behind MaskGIT, MDLM and LLaDA, and the &ldquo;diffusion LLMs&rdquo; such as Mercury and DiffusionGemma.</p>
+        <div class="math">x<sub>t</sub> = mask(x<sub>0</sub>, r) &nbsp;&nbsp; r = cos(&pi;/2 &middot; u), &nbsp; u ~ U(0,1) &nbsp;&nbsp;&rArr;&nbsp;&nbsp; L = E[ mean<sub>i &isin; masked</sub> &minus;log p<sub>&theta;</sub>(x<sub>0,i</sub> | x<sub>t</sub>, prompt) ]</div>
+        <p>The mask ratio follows a cosine schedule. It is the same schedule the sampler uses to decide how many pixels to reveal at each step, so training and inference see the same distribution of partially painted canvases. Several refinements make the objective work better for sprites:</p>
+        <ul>
+          <li><b>Stratified mask ratios</b> across the batch (low-discrepancy sampling) and <b>exact-count masks</b> (exactly &lceil;r&middot;256&rceil; pixels) reduce gradient variance.</li>
+          <li><b>Blob masks</b>: 25% of masks are spatially correlated (low-frequency noise ranking), so the model also learns to fill the contiguous holes that confidence-ordered decoding leaves behind.</li>
+          <li><b>Perceptual label smoothing</b>: 10% of the target mass is spread over perceptually close colors, weighted by <code>softmax(&minus;&Delta;E&sup2;/&tau;&sup2;)</code> with &tau; = 0.05. A slightly-off shade is penalized less than a wrong hue.</li>
+          <li><b>Self-conditioning with look-back</b> (50% of steps): a first pass predicts a draft distribution from a <em>noisier</em> canvas (30% extra masking), and its 512-way probabilities are fed back into the second pass, mimicking the sampler, which feeds the previous step&rsquo;s predictions forward.</li>
+          <li><b>Classifier-free guidance training</b>: the prompt is replaced by a learned null embedding 10% of the time. 5% of the time the short <em>subject</em> label is used instead of the full caption.</li>
+          <li><b>Caption-aware flips</b>: horizontal flips (p = 0.5) are skipped when a caption mentions &ldquo;left&rdquo; or &ldquo;right&rdquo;.</li>
+        </ul>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="wu-arch">
+        <h2>3. Architecture</h2>
+        <p>The denoiser is a small diffusion transformer with full 2D awareness. Text and pixels live in <b>one joint, bidirectional sequence</b>, as in a diffusion LLM: <code>[4 registers | 24 text tokens | 256 pixel tokens]</code>. The text tokens are updated by every block alongside the pixels.</p>
+        <figure class="wu-fig">
+          <svg viewBox="0 0 760 640" role="img" aria-label="Tessera architecture diagram" font-family="Inter, sans-serif">
+            <defs>
+              <marker id="wu-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#55556a"/></marker>
+              <pattern id="wu-px" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="5" height="5" fill="#ffd6a5"/><rect x="5" y="5" width="5" height="5" fill="#ffd6a5"/><rect x="5" width="5" height="5" fill="#fdffb6"/><rect y="5" width="5" height="5" fill="#caffbf"/></pattern>
+            </defs>
+            <!-- inputs -->
+            <rect x="20" y="16" width="220" height="62" rx="12" fill="#eef4ff" stroke="#c9d8f7"/>
+            <text x="130" y="41" text-anchor="middle" font-size="14" font-weight="700" fill="#1d2b4f">Prompt &#8594; CLIP text tower</text>
+            <text x="130" y="61" text-anchor="middle" font-size="12" fill="#4b5a7c">ViT-B/32, frozen &#183; 24 tokens</text>
+            <rect x="270" y="16" width="220" height="62" rx="12" fill="#fff4e8" stroke="#f3d7b6"/>
+            <text x="380" y="41" text-anchor="middle" font-size="14" font-weight="700" fill="#5a3a12">16&#215;16 canvas</text>
+            <text x="380" y="61" text-anchor="middle" font-size="12" fill="#7a5a32">palette ids + [MASK]</text>
+            <rect x="520" y="16" width="220" height="62" rx="12" fill="#f3efff" stroke="#d9cffb"/>
+            <text x="630" y="41" text-anchor="middle" font-size="14" font-weight="700" fill="#2e2066">Self-conditioning</text>
+            <text x="630" y="61" text-anchor="middle" font-size="12" fill="#5a4b95">previous step&#8217;s 512-way probs</text>
+
+            <path d="M130 78 V112" stroke="#55556a" stroke-width="1.6" marker-end="url(#wu-arr)" fill="none"/>
+            <path d="M380 78 V112" stroke="#55556a" stroke-width="1.6" marker-end="url(#wu-arr)" fill="none"/>
+            <path d="M630 78 V96 H520 V112" stroke="#55556a" stroke-width="1.6" marker-end="url(#wu-arr)" fill="none"/>
+            <text x="372" y="100" text-anchor="end" font-size="11" fill="#6e6e78">tok_emb + MLP(Fourier(OKLab))</text>
+
+            <!-- sequence -->
+            <rect x="20" y="116" width="70" height="40" rx="8" fill="#e9e9ee"/>
+            <text x="55" y="141" text-anchor="middle" font-size="12" font-weight="600" fill="#33333d">4 reg</text>
+            <rect x="94" y="116" width="150" height="40" rx="8" fill="#dbe7ff"/>
+            <text x="169" y="141" text-anchor="middle" font-size="12" font-weight="600" fill="#1d2b4f">24 text tokens</text>
+            <rect x="248" y="116" width="492" height="40" rx="8" fill="url(#wu-px)" stroke="#e8d3b5"/>
+            <rect x="420" y="124" width="148" height="24" rx="6" fill="#ffffffd9"/>
+            <text x="494" y="141" text-anchor="middle" font-size="12" font-weight="700" fill="#5a3a12">256 pixel tokens</text>
+            <text x="20" y="176" font-size="11" fill="#6e6e78">one joint bidirectional sequence &#183; 284 tokens &#183; QK-RMSNorm &#183; 2D axial RoPE (&#952; = 100)</text>
+
+            <!-- stack -->
+            <rect x="20" y="190" width="500" height="50" rx="12" fill="#fff" stroke="#d6d6de" stroke-width="1.4"/>
+            <text x="270" y="212" text-anchor="middle" font-size="14" font-weight="700" fill="#0d0d10">2 &#215; pixel-level blocks</text>
+            <text x="270" y="230" text-anchor="middle" font-size="11.5" fill="#6e6e78">16&#215;16 grid &#183; outlines, dithering, local detail</text>
+            <path d="M270 240 V258" stroke="#55556a" stroke-width="1.6" marker-end="url(#wu-arr)"/>
+            <rect x="190" y="260" width="160" height="26" rx="13" fill="#0d0d10"/>
+            <text x="270" y="277" text-anchor="middle" font-size="12" font-weight="600" fill="#fff">2&#215;2 merge &#8594; 64 patches</text>
+            <path d="M270 286 V302" stroke="#55556a" stroke-width="1.6" marker-end="url(#wu-arr)"/>
+            <rect x="70" y="304" width="400" height="70" rx="12" fill="#f3efff" stroke="#cfc2fb" stroke-width="1.4"/>
+            <text x="270" y="330" text-anchor="middle" font-size="15" font-weight="800" fill="#2e2066">8 &#215; core blocks</text>
+            <text x="270" y="349" text-anchor="middle" font-size="11.5" fill="#5a4b95">8&#215;8 patch grid &#183; 92 tokens &#183; global shape &amp; semantics</text>
+            <text x="270" y="365" text-anchor="middle" font-size="11" fill="#5a4b95">patch tokens sit at sub-pixel RoPE centres (one shared frame)</text>
+            <path d="M270 374 V390" stroke="#55556a" stroke-width="1.6" marker-end="url(#wu-arr)"/>
+            <rect x="170" y="392" width="200" height="26" rx="13" fill="#0d0d10"/>
+            <text x="270" y="409" text-anchor="middle" font-size="12" font-weight="600" fill="#fff">unmerge + skip (zero-init)</text>
+            <path d="M20 215 C -4 215 -4 405 168 405" stroke="#9a8ce0" stroke-width="1.6" stroke-dasharray="5 4" fill="none" marker-end="url(#wu-arr)"/>
+            <path d="M270 418 V434" stroke="#55556a" stroke-width="1.6" marker-end="url(#wu-arr)"/>
+            <rect x="20" y="436" width="500" height="50" rx="12" fill="#fff" stroke="#d6d6de" stroke-width="1.4"/>
+            <text x="270" y="458" text-anchor="middle" font-size="14" font-weight="700" fill="#0d0d10">2 &#215; pixel-level blocks</text>
+            <text x="270" y="476" text-anchor="middle" font-size="11.5" fill="#6e6e78">16&#215;16 grid &#183; re-sharpen edges</text>
+            <path d="M270 486 V502" stroke="#55556a" stroke-width="1.6" marker-end="url(#wu-arr)"/>
+            <rect x="20" y="504" width="500" height="44" rx="12" fill="#ecfdf3" stroke="#bfe8cf"/>
+            <text x="270" y="531" text-anchor="middle" font-size="13.5" font-weight="700" fill="#0f5132">zero-init head &#8594; 512-way color logits for each of the 256 pixels</text>
+
+            <!-- adaLN -->
+            <rect x="552" y="190" width="188" height="296" rx="14" fill="#fafafb" stroke="#d6d6de" stroke-dasharray="4 4"/>
+            <text x="646" y="216" text-anchor="middle" font-size="14" font-weight="800" fill="#0d0d10">adaLN-single</text>
+            <text x="646" y="240" text-anchor="middle" font-size="11.5" fill="#33333d">pooled CLIP vector</text>
+            <text x="646" y="256" text-anchor="middle" font-size="11.5" fill="#33333d">+ Fourier(mask ratio)</text>
+            <text x="646" y="280" text-anchor="middle" font-size="11.5" fill="#33333d">&#8595; MLP</text>
+            <text x="646" y="304" text-anchor="middle" font-size="11.5" fill="#33333d">shared shift / scale / gate</text>
+            <text x="646" y="320" text-anchor="middle" font-size="11.5" fill="#33333d">+ per-block learned bias</text>
+            <text x="646" y="350" text-anchor="middle" font-size="11" fill="#6e6e78">gates start at zero, so</text>
+            <text x="646" y="365" text-anchor="middle" font-size="11" fill="#6e6e78">every block starts as identity</text>
+            <path d="M552 215 H524" stroke="#9a9aab" stroke-width="1.4" stroke-dasharray="3 3" marker-end="url(#wu-arr)"/>
+            <path d="M552 339 H474" stroke="#9a9aab" stroke-width="1.4" stroke-dasharray="3 3" marker-end="url(#wu-arr)"/>
+            <path d="M552 461 H524" stroke="#9a9aab" stroke-width="1.4" stroke-dasharray="3 3" marker-end="url(#wu-arr)"/>
+
+            <!-- block inset -->
+            <text x="20" y="582" font-size="12.5" font-weight="700" fill="#0d0d10">Inside every block</text>
+            <g font-size="11.5" font-weight="600">
+              <rect x="20" y="594" width="104" height="30" rx="8" fill="#f1f1f4"/><text x="72" y="613" text-anchor="middle" fill="#26262c">RMSNorm &#183; mod</text>
+              <rect x="134" y="594" width="176" height="30" rx="8" fill="#dbe7ff"/><text x="222" y="613" text-anchor="middle" fill="#1d2b4f">joint attention (QK-norm, RoPE)</text>
+              <rect x="320" y="594" width="58" height="30" rx="8" fill="#f1f1f4"/><text x="349" y="613" text-anchor="middle" fill="#26262c">gate</text>
+              <rect x="388" y="594" width="104" height="30" rx="8" fill="#f1f1f4"/><text x="440" y="613" text-anchor="middle" fill="#26262c">RMSNorm &#183; mod</text>
+              <rect x="502" y="594" width="170" height="30" rx="8" fill="#fff4e8"/><text x="587" y="613" text-anchor="middle" fill="#5a3a12">Conv-SwiGLU (dw 3&#215;3)</text>
+              <rect x="682" y="594" width="58" height="30" rx="8" fill="#f1f1f4"/><text x="711" y="613" text-anchor="middle" fill="#26262c">gate</text>
+            </g>
+          </svg>
+          <figcaption>Tessera-small: width 512, 8 heads, depth 2 + 8 + 2, MLP ratio 3. About 13.8 GFLOPs per forward pass per image. The hourglass runs most of its depth on 64 patch tokens instead of 256 pixels, which roughly triples throughput at the same depth.</figcaption>
+        </figure>
+        <h3>The pieces, and why each is there</h3>
+        <table>
+          <thead><tr><th>Component</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>Color-grounded embeddings</td><td><code>emb(c) = learned(c) + MLP(Fourier(OKLab(c)))</code>. All 512 color tokens share statistical strength through their color coordinates, so a rare shade starts out close to similar common ones.</td></tr>
+            <tr><td>Dual-resolution hourglass</td><td>Pixel-level blocks handle outlines and dithering. A 2&times;2-merged core handles global shape and meaning at about a third of the cost. A zero-initialised skip path carries fine detail across the core.</td></tr>
+            <tr><td>2D axial RoPE</td><td>Rotary position encoding on the (row, column) axes with &theta; = 100, suited to a 16-pixel world. Patch tokens use the sub-pixel coordinates of their 2&times;2 centre, so both levels share one geometric frame.</td></tr>
+            <tr><td>QK-RMSNorm</td><td>Normalising queries and keys keeps attention logits bounded, which allows the high Muon learning rate without loss spikes.</td></tr>
+            <tr><td>Conv-SwiGLU</td><td>A zero-initialised depthwise 3&times;3 convolution on the gate branch of the MLP gives a strong local, translation-equivariant prior for very few parameters.</td></tr>
+            <tr><td>adaLN-single</td><td>One conditioning MLP (pooled text + Fourier features of the mask ratio) produces shift, scale and gate for every block, plus a small learned per-block bias, as in PixArt-&alpha;. Zero-initialised gates make each block start as the identity.</td></tr>
+            <tr><td>Registers</td><td>Four learned tokens that absorb attention sinks, so pixel tokens do not have to.</td></tr>
+            <tr><td>Self-conditioning projection</td><td>A zero-initialised linear map from the previous step&rsquo;s 512-way color distribution into the masked positions&rsquo; embeddings.</td></tr>
+          </tbody>
+        </table>
+        <div class="wu-callout"><b>Why a joint sequence instead of cross-attention?</b> In a diffusion LLM the prompt is just the start of the sequence. Letting text tokens attend to the evolving canvas, and be updated by it, gives the model a cheap way to re-read the prompt in light of what has already been painted, with no extra cross-attention layers.</div>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="wu-training">
+        <h2>4. Training recipe</h2>
+        <p>The pipeline was built to keep one GPU busy. The entire tokenized dataset (about 1.2 GB of integer tensors) lives on the GPU, and batches are random gathers: there is no DataLoader and no CPU bottleneck. Everything runs in bf16 autocast under <code>torch.compile</code> with static shapes. The loss covers all positions with a 0/1 weight, so the compiled graph has no data-dependent shapes.</p>
+        <table>
+          <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Data</td><td class="num">1,405,308 train / 4,096 val sprites (CC0)</td></tr>
+            <tr><td>Steps &times; batch</td><td class="num">82,342 &times; 512 = 30 epochs (42.2M sprite views)</td></tr>
+            <tr><td>Optimizer</td><td class="num">Muon for hidden matrices (43.0M params, Newton-Schulz-5, Moonlight RMS scaling) + fused AdamW for embeddings, head, norms and conditioning (4.6M)</td></tr>
+            <tr><td>Learning rate</td><td class="num">6e-4, warmup 1k, Warmup-Stable-Decay with a 1&minus;&radic; cooldown over the last 20%</td></tr>
+            <tr><td>Regularisation</td><td class="num">weight decay 0.05, &beta; = (0.9, 0.95), grad clip 1.0</td></tr>
+            <tr><td>EMA</td><td class="num">0.9995 (used for evaluation and in this demo)</td></tr>
+            <tr><td>Hardware</td><td class="num">1&times; NVIDIA RTX PRO 6000 Blackwell 96 GB (Colab G4), 33 GB used</td></tr>
+            <tr><td>Throughput</td><td class="num">about 2,200 sprites/s, about 106 TFLOP/s achieved in bf16</td></tr>
+            <tr><td>Wall-clock</td><td class="num" id="wu-wall">5.5 h, including evaluation and checkpoints</td></tr>
+          </tbody>
+        </table>
+        <p>Checkpoints were written asynchronously to Google Drive every 15 minutes (atomic rename), with full resume of the model, EMA, optimizer, LR schedule position, data order and RNG state, so a Colab disconnect costs minutes, not the run.</p>
+        <figure class="wu-fig">
+          <div id="wu-chart-lr"></div>
+          <figcaption>Warmup-Stable-Decay schedule (left axis) and gradient norm (right axis). The long flat phase lets the run be extended at any time. Most of the final quality arrives in the cooldown.</figcaption>
+        </figure>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="wu-sampling">
+        <h2>5. Parallel decoding: from blank canvas to sprite</h2>
+        <p>Generation starts with all 256 pixels masked. Each step runs one batched forward pass and then commits a growing number of pixels:</p>
+        <ol>
+          <li><b>Predict</b> a 512-way color distribution for every pixel, conditional and unconditional in one batch.</li>
+          <li><b>Guide</b>: <code>logits = l<sub>uncond</sub> + w &middot; (l<sub>cond</sub> &minus; l<sub>uncond</sub>)</code>, with w = 3 by default (constant, or ramped).</li>
+          <li><b>Sample</b> a color for every masked pixel (temperature and top-p are optional).</li>
+          <li><b>Choose which pixels to keep</b>: rank them by log-confidence plus annealed Gumbel noise, so the order is mostly confident-first but not greedy. A cosine schedule fixes how many stay masked after each step.</li>
+          <li><b>Spatial NMS</b>: an <em>uncertain</em> pixel may only be committed if it is the most confident masked pixel in its 3&times;3 neighbourhood. Committing two adjacent pixels from independent marginals is the main failure mode of parallel decoding: they can disagree and leave speckles. Confident pixels (p &ge; 0.9, mostly background) are committed freely.</li>
+          <li><b>Self-condition</b>: the full predicted distribution is fed into the next step.</li>
+        </ol>
+        <figure class="wu-fig">
+          <div id="wu-chart-sched"></div>
+          <figcaption>How many pixels are committed at each of the 16 steps under the cosine schedule. Early steps commit only a handful of high-confidence pixels (often transparent background) and set the layout. Later steps fill in detail many pixels at a time, conditioned on everything already placed.</figcaption>
+        </figure>
+        <figure class="wu-fig">
+          <div class="wu-film" id="wu-film"></div>
+          <figcaption id="wu-film-cap">A real trajectory from the Explore gallery, every second step.</figcaption>
+        </figure>
+        <p><b>Inpainting</b> comes free: pass a canvas plus a keep-mask, and kept pixels are never changed. The Pixel Editor in this studio uses it for the Magic brush, for &ldquo;Remix&rdquo;, and for completing a hand-drawn sketch. Optional <b>polish passes</b> re-mask the least confident 8% of pixels after decoding and re-predict them with full context.</p>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="wu-results">
+        <h2>6. Results</h2>
+        <figure class="wu-fig">
+          <div id="wu-chart-loss"></div>
+          <figcaption>Training loss (includes the label-smoothing term), training NLL, and validation NLL of the EMA weights (log scale). Validation sits below training because it averages five fixed mask ratios (mean 55%) and uses EMA weights, while training sees heavier cosine masking (mean 64%) plus augmentation and condition dropout.</figcaption>
+        </figure>
+        <figure class="wu-fig">
+          <div id="wu-chart-ratio"></div>
+          <figcaption>Validation NLL at fixed mask ratios. Lightly masked canvases (filling details) are easy. Nearly blank ones (choosing the whole layout from the prompt) are where the model has the most freedom, and the highest entropy.</figcaption>
+        </figure>
+        <table>
+          <thead><tr><th>Metric (final EMA weights)</th><th>Value</th></tr></thead>
+          <tbody id="wu-results-table">
+            <tr><td>Validation NLL</td><td class="num">0.859 nats / pixel (perplexity 2.36 out of 512)</td></tr>
+          </tbody>
+        </table>
+        <p>The CLIP score (ViT-B/32 cosine &times; 100 between a sprite and its caption, on 512 validation prompts) of generated sprites matches that of the real dataset sprites for the same captions. CLIP is a coarse judge of 16&times;16 images, so this mainly shows that prompt adherence is at the level of the training data. It does not show the model beats it.</p>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="wu-limits">
+        <h2>7. Limitations and honest notes</h2>
+        <ul>
+          <li><b>16&times;16 only.</b> The canvas size is fixed by the training data.</li>
+          <li><b>Captions are machine-written.</b> The dataset card notes that caption&ndash;image agreement was not human-reviewed, which bounds how precisely prompts are followed. Counting, text and complex scenes are out of reach.</li>
+          <li><b>No ablations yet.</b> Each architectural choice above is a reasoned design decision, not a measured win. The hyperparameters are sensible defaults, not tuned.</li>
+          <li><b>CLIP score is a weak metric</b> at this resolution. Judge the model mostly with your eyes.</li>
+        </ul>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="wu-credits">
+        <h2>8. Credits &amp; thanks</h2>
+        <div class="wu-thanks">
+          <p><b>A huge thank-you to Angais</b> for creating and openly releasing <a href="https://huggingface.co/datasets/Angais/pixel-art-atlas-1.4m" target="_blank" rel="noopener"><b>Pixel Art Atlas 1.4M</b></a>: 1.4 million captioned pixel-art sprites, free for anyone to use. Every pixel Tessera paints was learned from this dataset. Tessera simply would not exist without it.</p>
+          <p style="margin:0">If you enjoy this demo, please visit the dataset page and give it a like.</p>
+        </div>
+        <ul>
+          <li>Text conditioning uses the frozen text tower of <a href="https://huggingface.co/openai/clip-vit-base-patch32" target="_blank" rel="noopener">OpenAI CLIP ViT-B/32</a>.</li>
+          <li>Built with PyTorch, Hugging Face Transformers and Gradio. Hosted on Hugging Face Spaces (ZeroGPU).</li>
+          <li>Model, training pipeline and this studio by <b>Jagrat Patel</b> (<a href="https://huggingface.co/thejagstudio" target="_blank" rel="noopener">@TheJagStudio</a>).</li>
+          <li><b>Weights:</b> <a href="https://huggingface.co/thejagstudio/tessera-small" target="_blank" rel="noopener">thejagstudio/tessera-small</a> on Hugging Face.</li>
+          <li><b>License:</b> <a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noopener">CC BY-NC 4.0</a>, &copy; 2026 Jagrat Patel. Free for education, research and personal projects with credit. <b>Commercial use</b> of the model or its outputs (paid products, apps, games, services) <b>is not allowed</b> without a license. Get in touch via <a href="https://huggingface.co/thejagstudio" target="_blank" rel="noopener">Hugging Face</a> for commercial licensing.</li>
+        </ul>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="wu-refs">
+        <h2>9. References</h2>
+        <ol class="wu-refs">
+          <li>Nie et al. <i>Large Language Diffusion Models (LLaDA)</i>. <a href="https://arxiv.org/abs/2502.09992" target="_blank" rel="noopener">arXiv:2502.09992</a></li>
+          <li>Inception Labs. <i>Mercury: Ultra-fast language models based on diffusion</i>. <a href="https://arxiv.org/abs/2506.17298" target="_blank" rel="noopener">arXiv:2506.17298</a></li>
+          <li><i>DiffusionGemma</i>. <a href="https://arxiv.org/abs/2608.00146" target="_blank" rel="noopener">arXiv:2608.00146</a></li>
+          <li><i>PixelDiT: pixel-space diffusion transformers</i>. <a href="https://arxiv.org/abs/2511.20645" target="_blank" rel="noopener">arXiv:2511.20645</a></li>
+          <li>Chang et al. <i>MaskGIT: Masked Generative Image Transformer</i>. <a href="https://arxiv.org/abs/2202.04200" target="_blank" rel="noopener">arXiv:2202.04200</a></li>
+          <li>Sahoo et al. <i>Simple and Effective Masked Diffusion Language Models (MDLM)</i>. <a href="https://arxiv.org/abs/2406.07524" target="_blank" rel="noopener">arXiv:2406.07524</a></li>
+          <li>Peebles &amp; Xie. <i>Scalable Diffusion Models with Transformers (DiT)</i>. <a href="https://arxiv.org/abs/2212.09748" target="_blank" rel="noopener">arXiv:2212.09748</a></li>
+          <li>Chen et al. <i>PixArt-&alpha;</i> (adaLN-single). <a href="https://arxiv.org/abs/2310.00426" target="_blank" rel="noopener">arXiv:2310.00426</a></li>
+          <li>Chen, Zhang &amp; Hinton. <i>Analog Bits</i> (self-conditioning). <a href="https://arxiv.org/abs/2208.04202" target="_blank" rel="noopener">arXiv:2208.04202</a></li>
+          <li>Ho &amp; Salimans. <i>Classifier-Free Diffusion Guidance</i>. <a href="https://arxiv.org/abs/2207.12598" target="_blank" rel="noopener">arXiv:2207.12598</a></li>
+          <li>Darcet et al. <i>Vision Transformers Need Registers</i>. <a href="https://arxiv.org/abs/2309.16588" target="_blank" rel="noopener">arXiv:2309.16588</a></li>
+          <li>Su et al. <i>RoFormer: Rotary Position Embedding</i>. <a href="https://arxiv.org/abs/2104.09864" target="_blank" rel="noopener">arXiv:2104.09864</a></li>
+          <li>Jordan et al. <i>Muon optimizer</i>, and Liu et al. <i>Muon is Scalable for LLM Training (Moonlight)</i>. <a href="https://arxiv.org/abs/2502.16982" target="_blank" rel="noopener">arXiv:2502.16982</a></li>
+          <li>Hu et al. <i>MiniCPM</i> (Warmup-Stable-Decay schedule). <a href="https://arxiv.org/abs/2404.06395" target="_blank" rel="noopener">arXiv:2404.06395</a></li>
+          <li>Ottosson. <i>A perceptual color space for image processing (OKLab)</i>. <a href="https://bottosson.github.io/posts/oklab/" target="_blank" rel="noopener">bottosson.github.io</a></li>
+          <li>Radford et al. <i>Learning Transferable Visual Models From Natural Language Supervision (CLIP)</i>. <a href="https://arxiv.org/abs/2103.00020" target="_blank" rel="noopener">arXiv:2103.00020</a></li>
+          <li>Angais. <i>Pixel Art Atlas 1.4M</i>. <a href="https://huggingface.co/datasets/Angais/pixel-art-atlas-1.4m" target="_blank" rel="noopener">huggingface.co/datasets/Angais/pixel-art-atlas-1.4m</a></li>
+        </ol>
+      </section>
+    </article>
+  </div>
+</div>

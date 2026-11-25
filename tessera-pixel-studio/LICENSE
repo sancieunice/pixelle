@@ -1,0 +1,34 @@
+Tessera: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+Copyright (c) 2026 Jagrat Patel (TheJagStudio)
+
+The Tessera model weights and checkpoints, configuration files, training and inference source
+code, and the Tessera Pixel Studio application (together, "the Work") are licensed under the
+Creative Commons Attribution-NonCommercial 4.0 International License.
+
+Full legal code: https://creativecommons.org/licenses/by-nc/4.0/legalcode
+Summary:         https://creativecommons.org/licenses/by-nc/4.0/
+
+In short:
+
+  You MAY, free of charge, for NON-COMMERCIAL purposes only (education, teaching, academic and
+  independent research, personal projects, experiments):
+    - download, use and run the Work;
+    - share, copy and redistribute it;
+    - adapt, fine-tune and build upon it;
+  as long as you give appropriate credit ("Tessera by Jagrat Patel (TheJagStudio)"), link to
+  this license, and indicate if changes were made.
+
+  You may NOT use the Work, or images generated with it, for commercial purposes: anything
+  primarily intended for or directed toward commercial advantage or monetary compensation.
+  This includes selling or licensing the model or its outputs, using it in paid products,
+  apps, games or services, and offering it as a hosted service that earns money.
+
+Commercial licensing: if you would like to use Tessera commercially, a separate paid license
+may be available. Contact Jagrat Patel via https://huggingface.co/thejagstudio.
+
+Third-party components are not covered by this license and keep their own terms: the frozen
+CLIP ViT-B/32 text encoder (OpenAI, MIT License) and the training data, Pixel Art Atlas 1.4M by
+Angais.
+
+THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. In no event shall the author be
+liable for any claim, damages or other liability arising from the Work or its use.
