@@ -4,13 +4,13 @@ echo ========================================================
 echo         Launching PIXELLE Companion Ecosystem
 echo ========================================================
 
-start "Pixelle Backend API" cmd /k "run_backend.bat"
+start "Pixelle Backend API" cmd /k "cd /d "%~dp0backend" && call "venv\Scripts\activate.bat" && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 timeout /t 3 /nobreak >nul
 
-start "Pixelle Web Studio" cmd /k "run_frontend.bat"
+start "Pixelle Web Studio" cmd /k "cd /d "%~dp0frontend" && npm run dev"
 timeout /t 3 /nobreak >nul
 
-start "Pixelle Desktop Companion" cmd /k "run_desktop.bat"
+start "Pixelle Desktop Companion" cmd /k "set "ELECTRON_RUN_AS_NODE=" && cd /d "%~dp0desktop" && npm start"
 
 echo.
 echo All components started!
